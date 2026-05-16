@@ -8,6 +8,7 @@ __pycache__/
 # 3. 数据集 (机器学习项目的数据通常很大，千万不要提交到 Git)
 raw_data/
 processed/
+weights/
 
 # 4. 训练日志与产出
 runs/
