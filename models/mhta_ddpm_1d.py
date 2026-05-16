@@ -241,7 +241,8 @@ class DDPMScheduler1D:
         num_train_timesteps: int = 1000,
         beta_start: float = 1e-4,
         beta_end: float = 2e-2,
-        clip_sample: bool = False,
+        clip_sample: bool = True,
+        clip_range: float = 5.0,
         cosine_s: float = 0.008,
         max_beta: float = 0.999,
     ):
@@ -249,6 +250,7 @@ class DDPMScheduler1D:
         self.beta_start = float(beta_start)
         self.beta_end = float(beta_end)
         self.clip_sample = bool(clip_sample)
+        self.clip_range = float(clip_range)
         self.cosine_s = float(cosine_s)
         self.max_beta = float(max_beta)
         self.betas = self._cosine_beta_schedule(self.num_train_timesteps, self.cosine_s, self.max_beta)
@@ -287,7 +289,7 @@ class DDPMScheduler1D:
     def predict_x0_from_eps(self, x_t: torch.Tensor, timesteps: torch.Tensor, eps: torch.Tensor) -> torch.Tensor:
         alpha = self._extract(self.alphas_cumprod, timesteps, x_t.shape)
         x0 = (x_t - torch.sqrt(1.0 - alpha) * eps) / torch.sqrt(alpha)
-        return torch.clamp(x0, -3.0, 3.0) if self.clip_sample else x0
+        return torch.clamp(x0, -self.clip_range, self.clip_range) if self.clip_sample else x0
 
     @torch.no_grad()
     def p_sample(self, model: nn.Module, x: torch.Tensor, timesteps: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
@@ -299,7 +301,10 @@ class DDPMScheduler1D:
         variance = self._extract(self.posterior_variance, timesteps, x.shape)
         noise = torch.randn_like(x)
         nonzero = (timesteps != 0).float().view(-1, *([1] * (x.dim() - 1)))
-        return mean + nonzero * torch.sqrt(torch.clamp(variance, min=1e-20)) * noise
+        sample = mean + nonzero * torch.sqrt(torch.clamp(variance, min=1e-20)) * noise
+        if self.clip_sample:
+            sample = torch.clamp(sample, -self.clip_range, self.clip_range)
+        return sample
 
     @torch.no_grad()
     def sample(
@@ -341,7 +346,7 @@ class DDPMScheduler1D:
             alpha_t = self._extract(self.alphas_cumprod, t, x.shape)
             x0 = self.predict_x0_from_eps(x, t, eps)
             if i == len(steps) - 1:
-                x = x0
+                x = torch.clamp(x0, -self.clip_range, self.clip_range) if self.clip_sample else x0
                 continue
             t_next = torch.full((shape[0],), int(steps[i + 1].item()), dtype=torch.long, device=device)
             alpha_next = self._extract(self.alphas_cumprod, t_next, x.shape)
@@ -353,4 +358,6 @@ class DDPMScheduler1D:
             direction = torch.sqrt(torch.clamp(1.0 - alpha_next - sigma.square(), min=0.0)) * eps
             noise = sigma * torch.randn_like(x) if eta > 0 else 0.0
             x = torch.sqrt(alpha_next) * x0 + direction + noise
+            if self.clip_sample:
+                x = torch.clamp(x, -self.clip_range, self.clip_range)
         return x
