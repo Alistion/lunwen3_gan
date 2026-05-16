@@ -69,6 +69,7 @@ def main(config: dict = CONFIG) -> None:
     optimizer = optim.Adam(model.parameters(), lr=config["lr"])
     ema = ModelEmaV3(model, decay=config["ema_decay"])
     criterion = nn.MSELoss(reduction='mean')
+    best_loss = float("inf")
 
     logger.info(f"开始训练 MB-DDPM，数据量: {len(dataset)}，设备: {device}")
 
@@ -112,18 +113,27 @@ def main(config: dict = CONFIG) -> None:
         logger.info(f"Epoch {epoch}/{config['epochs']} | Loss: {avg_loss:.6f}")
 
         # 4. 存盘点
+        checkpoint = {
+            'weights': model.state_dict(),
+            'ema': ema.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'epoch': int(epoch),
+            'loss': float(avg_loss),
+            'config': dict(config),
+            'model_kwargs': {
+                'in_feature': int(config["signal_length"]),
+                'time_steps': int(config["num_time_steps"]),
+                'num_classes': int(config["num_classes"]),
+            },
+        }
+
+        if avg_loss < best_loss:
+            best_loss = float(avg_loss)
+            torch.save(checkpoint, ckpt_dir / "best_model.pt")
+
+        torch.save(checkpoint, ckpt_dir / "latest_model.pt")
+
         if epoch % config["save_every"] == 0 or epoch == config["epochs"]:
-            checkpoint = {
-                'weights': model.state_dict(),
-                'ema': ema.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'config': dict(config),
-                'model_kwargs': {
-                    'in_feature': int(config["signal_length"]),
-                    'time_steps': int(config["num_time_steps"]),
-                    'num_classes': int(config["num_classes"]),
-                },
-            }
             torch.save(checkpoint, ckpt_dir / f"mb_ddpm_epoch_{epoch}.pt")
 
 if __name__ == "__main__":
