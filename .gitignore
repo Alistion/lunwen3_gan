@@ -6,7 +6,6 @@ __pycache__/
 .vscode/
 
 # 3. 数据集 (机器学习项目的数据通常很大，千万不要提交到 Git)
-data/
 raw_data/
 processed/
 
