@@ -17,7 +17,7 @@ from utils.signal_utils import CLASS_NAMES
 
 
 CONFIG = {
-    "data_dir": Path("processed/omc_tf_gan_dataset"),
+    "data_dir": Path("processed/mhta_base_dataset"),
     "out_dir": Path("runs/omc_tf_mhta_ddpm_v1"),
     "epochs": 3000,
     "batch_size": 32,
@@ -46,7 +46,7 @@ CONFIG = {
 class SignalDataset(Dataset):
     def __init__(self, npz_path: Path):
         if not npz_path.exists():
-            raise FileNotFoundError(f"Missing train set: {npz_path}. Please run python data/preprocess.py first.")
+            raise FileNotFoundError(f"Missing train set: {npz_path}. Please run python data_preprocess/preprocess.py first.")
         data = np.load(npz_path, allow_pickle=True)
         self.x = np.asarray(data["X"], dtype=np.float32)
         self.y = np.asarray(data["y"], dtype=np.int64)

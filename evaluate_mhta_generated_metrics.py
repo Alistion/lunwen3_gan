@@ -15,8 +15,8 @@ from utils.signal_utils import CLASS_NAMES, LABEL_MAP
 
 
 CONFIG = {
-    "real_npz": Path("processed/omc_tf_gan_dataset/train.npz"),
-    "generated_npz": Path("processed/omc_tf_mhta_ddpm_dataset_augmented/generated_only.npz"),
+    "real_npz": Path("processed/mhta_base_dataset/train.npz"),
+    "generated_npz": Path("processed/mhta_augmented_dataset/generated_only.npz"),
     "out_dir": Path("runs/omc_tf_mhta_ddpm_v1/evaluation"),
     "fs": 2048,
     "max_freq": 300.0,

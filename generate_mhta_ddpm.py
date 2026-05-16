@@ -14,9 +14,9 @@ from utils.signal_utils import CLASS_NAMES, LABEL_MAP, order_template_for_labels
 
 
 CONFIG = {
-    "data_dir": Path("processed/omc_tf_gan_dataset"),
+    "data_dir": Path("processed/mhta_base_dataset"),
     "ckpt": Path("runs/omc_tf_mhta_ddpm_v1/checkpoints/best_model.pt"),
-    "out_dir": Path("processed/omc_tf_mhta_ddpm_dataset_augmented"),
+    "out_dir": Path("processed/mhta_augmented_dataset"),
     "samples_per_fault_class": 10,
     "batch_size": 32,
     "signal_length": 2048,
@@ -97,7 +97,7 @@ def main(config: dict = CONFIG) -> None:
 
     train_path = Path(config["data_dir"]) / "train.npz"
     if not train_path.exists():
-        raise FileNotFoundError(f"Missing train set: {train_path}. Please run python data/preprocess.py first.")
+        raise FileNotFoundError(f"Missing train set: {train_path}. Please run python data_preprocess/preprocess.py first.")
     train = np.load(train_path, allow_pickle=True)
     x_train = np.asarray(train["X"], dtype=np.float32)
     y_train = np.asarray(train["y"], dtype=np.int64)

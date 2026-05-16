@@ -14,7 +14,7 @@ from utils.signal_utils import CLASS_NAMES
 
 
 CONFIG = {
-    "generated_npz": Path("processed/omc_tf_mhta_ddpm_dataset_augmented/generated_only.npz"),
+    "generated_npz": Path("processed/mhta_augmented_dataset/generated_only.npz"),
     "out_dir": Path("runs/omc_tf_mhta_ddpm_v1/generated_preview"),
     "fs": 2048,
     "samples_per_class": 5,
