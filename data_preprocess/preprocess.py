@@ -40,7 +40,7 @@ CONFIG = {
     "overlap": 0.5,
     "seed": 42,
     "train_counts": {
-        "normal": 100,
+        "normal": 50,
         "unbalance": 20,
         "misalignment": 20,
         "crack": 20,

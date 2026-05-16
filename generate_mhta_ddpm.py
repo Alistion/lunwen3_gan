@@ -15,7 +15,7 @@ from utils.signal_utils import CLASS_NAMES, LABEL_MAP, order_template_for_labels
 
 CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
-    "ckpt": Path("runs/omc_tf_mhta_ddpm_v1/checkpoints/best_model.pt"),
+    "ckpt": Path("weight/best_model.pt"),
     "out_dir": Path("processed/mhta_augmented_dataset"),
     "samples_per_fault_class": 10,
     "batch_size": 32,
@@ -121,7 +121,8 @@ def main(config: dict = CONFIG) -> None:
                 bsz = min(batch_size, left)
                 labels = torch.full((bsz,), label, dtype=torch.long, device=device)
                 fake = sample_batch(scheduler, model, labels, signal_length, config, device)
-                fake_np = remove_signal_mean(fake.squeeze(1).cpu().numpy().astype(np.float32))
+                # fake_np = remove_signal_mean(fake.squeeze(1).cpu().numpy().astype(np.float32))
+                fake_np = fake.squeeze(1).cpu().numpy().astype(np.float32)
                 generated_x.append(fake_np)
                 generated_y.append(np.full(bsz, label, dtype=np.int64))
                 for i in range(bsz):
