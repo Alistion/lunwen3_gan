@@ -12,11 +12,14 @@ from tqdm import tqdm
 from models.mb_ddpm_1d import DDPM_Scheduler_1D, UNET_1D
 from utils.seed import set_seed
 from utils.signal_utils import CLASS_NAMES, LABEL_MAP, order_template_for_labels, safe_copy_npz
+from utils.run_paths import resolve_existing_run_dir
 
 
 CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
-    "ckpt": Path("runs/mb_ddpm_lunwen3_v1/checkpoints/mb_ddpm_epoch_2000.pt"),
+    "run_root": Path("runs/mb_ddpm_lunwen3_v1"),
+    "run_id": None,
+    "ckpt": None,
     "out_dir": Path("processed/mb_augmented_dataset"),
     "samples_per_fault_class": 10,
     "signal_length": 2048,
@@ -58,7 +61,7 @@ def remove_signal_mean(x: np.ndarray) -> np.ndarray:
 
 
 def load_model(config: dict, device: torch.device) -> tuple[UNET_1D, DDPM_Scheduler_1D, dict]:
-    ckpt = Path(config["ckpt"])
+    ckpt = resolve_checkpoint_path(config)
     if not ckpt.exists():
         raise FileNotFoundError(f"MB-DDPM checkpoint does not exist: {ckpt}. Please run python train_mb_ddpm.py first.")
 
@@ -79,6 +82,14 @@ def load_model(config: dict, device: torch.device) -> tuple[UNET_1D, DDPM_Schedu
     model = ema.module.eval()
     scheduler = DDPM_Scheduler_1D(num_time_steps=int(model_kwargs["time_steps"])).to(device)
     return model, scheduler, payload
+
+
+def resolve_checkpoint_path(config: dict) -> Path:
+    explicit_ckpt = config.get("ckpt")
+    if explicit_ckpt:
+        return Path(explicit_ckpt)
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
+    return run_dir / "checkpoints" / "best_model.pt"
 
 
 def ddpm_sample_one(
@@ -183,7 +194,7 @@ def main(config: dict = CONFIG) -> None:
                         "generated_index": generated_index,
                         "rpm": rpm,
                         "fr": fr,
-                        "checkpoint": Path(config["ckpt"]).as_posix(),
+                        "checkpoint": resolve_checkpoint_path(config).as_posix(),
                         "sampler": sampler,
                         "num_inference_steps": num_time_steps if sampler == "ddpm" else int(config["ddim_steps"]),
                     }

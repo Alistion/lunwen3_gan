@@ -9,13 +9,16 @@ import torch
 from tqdm import tqdm
 
 from models.mhta_ddpm_1d import ConditionalMHTAUNet1D, DDPMScheduler1D
+from utils.run_paths import resolve_existing_run_dir
 from utils.seed import set_seed
 from utils.signal_utils import CLASS_NAMES, LABEL_MAP, order_template_for_labels, safe_copy_npz
 
 
 CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
-    "ckpt": Path("weight/best_model.pt"),
+    "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
+    "run_id": None,
+    "ckpt": None,
     "out_dir": Path("processed/mhta_augmented_dataset"),
     "samples_per_fault_class": 10,
     "batch_size": 32,
@@ -43,7 +46,7 @@ def get_device(name: str) -> torch.device:
 
 
 def load_model(config: dict, device: torch.device) -> tuple[ConditionalMHTAUNet1D, DDPMScheduler1D, dict]:
-    ckpt = Path(config["ckpt"])
+    ckpt = resolve_checkpoint_path(config)
     if not ckpt.exists():
         raise FileNotFoundError(f"MHTA-DDPM checkpoint does not exist: {ckpt}. Please run python train_mhta_ddpm.py first.")
     payload = torch.load(ckpt, map_location=device)
@@ -55,6 +58,14 @@ def load_model(config: dict, device: torch.device) -> tuple[ConditionalMHTAUNet1
     scheduler_kwargs.setdefault("clip_range", 5.0)
     scheduler = DDPMScheduler1D(**scheduler_kwargs).to(device)
     return model, scheduler, payload
+
+
+def resolve_checkpoint_path(config: dict) -> Path:
+    explicit_ckpt = config.get("ckpt")
+    if explicit_ckpt:
+        return Path(explicit_ckpt)
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
+    return run_dir / "checkpoints" / "best_model.pt"
 
 
 def write_metadata(path: Path, rows: list[dict]) -> None:
@@ -132,7 +143,7 @@ def main(config: dict = CONFIG) -> None:
                             "generated_index": start + i,
                             "rpm": rpm,
                             "fr": fr,
-                            "checkpoint": Path(config["ckpt"]).as_posix(),
+                            "checkpoint": resolve_checkpoint_path(config).as_posix(),
                             "sampler": str(config["sampler"]).lower(),
                             "num_inference_steps": int(config["num_inference_steps"]),
                             "eta": float(config["eta"]),

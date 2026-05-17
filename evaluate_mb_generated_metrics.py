@@ -12,12 +12,14 @@ import numpy as np
 import pandas as pd
 
 from utils.signal_utils import CLASS_NAMES, LABEL_MAP
+from utils.run_paths import resolve_existing_run_dir
 
 
 CONFIG = {
     "real_npz": Path("processed/mhta_base_dataset/train.npz"),
     "generated_npz": Path("processed/mb_augmented_dataset/generated_only.npz"),
-    "out_dir": Path("runs/mb_ddpm_lunwen3_v1/evaluation"),
+    "run_root": Path("runs/mb_ddpm_lunwen3_v1"),
+    "run_id": None,
     "fs": 2048,
     "max_freq": 300.0,
     "fd_downsample": 256,
@@ -333,7 +335,8 @@ def overall_row(summary: pd.DataFrame) -> dict:
 
 def main(config: dict = CONFIG) -> None:
     logger = setup_logger()
-    out_dir = Path(config["out_dir"])
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
+    out_dir = run_dir / "evaluation"
     out_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(int(config["seed"]))
 

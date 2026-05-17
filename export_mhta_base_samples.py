@@ -13,11 +13,13 @@ import numpy as np
 import pandas as pd
 
 from utils.signal_utils import CLASS_NAMES, LABEL_MAP
+from utils.run_paths import create_run_dir
 
 
 CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
-    "out_dir": Path("runs/mhta_base_dataset_preview"),
+    "run_root": Path("runs/mhta_base_dataset_preview"),
+    "run_id": None,
     "fs": 2048,
     "samples_per_class": 5,
     "skip_classes": {"normal"},
@@ -142,8 +144,7 @@ def save_time_frequency_grid(class_name: str, samples: np.ndarray, fs: int, out_
 def main(config: dict = CONFIG) -> None:
     logger = setup_logger()
     data_dir = Path(config["data_dir"])
-    out_dir = Path(config["out_dir"])
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = create_run_dir(Path(config["run_root"]), config.get("run_id"))
 
     x_all, y_all = load_all_splits(data_dir)
     if bool(config["denormalize_to_g"]):

@@ -12,13 +12,15 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from models.mhta_ddpm_1d import ConditionalMHTAUNet1D, DDPMScheduler1D
+from utils.run_paths import create_run_dir
 from utils.seed import set_seed
 from utils.signal_utils import CLASS_NAMES
 
 
 CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
-    "out_dir": Path("runs/omc_tf_mhta_ddpm_v1"),
+    "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
+    "run_id": None,
     "epochs": 3000,
     "batch_size": 16,
     "lr": 1e-4,
@@ -130,10 +132,9 @@ def main(config: dict = CONFIG) -> None:
     logger = setup_logger()
     set_seed(int(config["seed"]))
     device = get_device(str(config["device"]))
-    out_dir = Path(config["out_dir"])
+    out_dir = create_run_dir(Path(config["run_root"]), config.get("run_id"))
     ckpt_dir = out_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     with (out_dir / "config.json").open("w", encoding="utf-8") as f:
         json.dump(serializable_config(config), f, indent=2)
@@ -155,6 +156,7 @@ def main(config: dict = CONFIG) -> None:
     best_loss = float("inf")
 
     logger.info("Training MHTA-DDPM on %d samples with device=%s", len(dataset), device)
+    logger.info("Run directory: %s", out_dir)
     with log_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=["epoch", "loss", "best_loss"])
         writer.writeheader()

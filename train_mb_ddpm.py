@@ -13,10 +13,12 @@ from timm.utils import ModelEmaV3
 
 # 导入刚才添加的 mb-ddpm 模型
 from models.mb_ddpm_1d import UNET_1D, DDPM_Scheduler_1D
+from utils.run_paths import create_run_dir
 
 CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
-    "out_dir": Path("runs/mb_ddpm_lunwen3_v1"),
+    "run_root": Path("runs/mb_ddpm_lunwen3_v1"),
+    "run_id": None,
     "epochs": 2000,
     "batch_size": 32,
     "lr": 1e-4,
@@ -50,7 +52,7 @@ def main(config: dict = CONFIG) -> None:
     logger = setup_logger()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    out_dir = config["out_dir"]
+    out_dir = create_run_dir(Path(config["run_root"]), config.get("run_id"))
     ckpt_dir = out_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -72,6 +74,7 @@ def main(config: dict = CONFIG) -> None:
     best_loss = float("inf")
 
     logger.info(f"开始训练 MB-DDPM，数据量: {len(dataset)}，设备: {device}")
+    logger.info("Run directory: %s", out_dir)
 
     # 3. mb-ddpm 的训练循环
     for epoch in range(1, config["epochs"] + 1):

@@ -11,11 +11,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from utils.signal_utils import CLASS_NAMES
+from utils.run_paths import resolve_existing_run_dir
 
 
 CONFIG = {
     "generated_npz": Path("processed/mhta_augmented_dataset/generated_only.npz"),
-    "out_dir": Path("runs/omc_tf_mhta_ddpm_v1/generated_preview"),
+    "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
+    "run_id": None,
     "fs": 2048,
     "samples_per_class": 5,
     "max_freq": 300.0,
@@ -146,7 +148,8 @@ def plot_overview(x: np.ndarray, y: np.ndarray, class_names: list[str], out_dir:
 
 def main(config: dict = CONFIG) -> None:
     logger = setup_logger()
-    out_dir = Path(config["out_dir"])
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
+    out_dir = run_dir / "generated_preview"
     out_dir.mkdir(parents=True, exist_ok=True)
     x, y, class_names = load_generated(Path(config["generated_npz"]))
     rng = np.random.default_rng(int(config["seed"]))
