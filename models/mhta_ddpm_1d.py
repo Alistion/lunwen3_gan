@@ -84,6 +84,47 @@ class MHTABlock1D(nn.Module):
         return x + self.attn(self.norm1(x))
 
 
+class TemporalAttention1D(nn.Module):
+    """在时间维度上计算全局自注意力的 1D 模块。
+
+    输入/输出张量形状均为:
+        x: [Batch, Channel, Length]
+    Attention 矩阵形状为:
+        [Batch, Head, Length, Length]
+    因此它显式建模的是不同时间位置之间的全局依赖关系。
+    """
+
+    def __init__(self, channels: int, num_heads: int = 4, bias: bool = False):
+        super().__init__()
+        if channels % num_heads != 0:
+            raise ValueError(f"channels={channels} must be divisible by num_heads={num_heads}")
+        self.num_heads = int(num_heads)
+        self.head_dim = channels // self.num_heads
+        self.scale = self.head_dim ** -0.5
+        self.norm = RMSNorm1D(channels)
+        self.qkv = nn.Conv1d(channels, channels * 3, kernel_size=1, bias=bias)
+        self.project_out = nn.Conv1d(channels, channels, kernel_size=1, bias=bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        bsz, channels, length = x.shape
+        h = self.norm(x)
+        q, k, v = self.qkv(h).chunk(3, dim=1)
+
+        # [B, C, L] -> [B, Head, L, HeadDim]
+        q = q.view(bsz, self.num_heads, self.head_dim, length).transpose(-2, -1)
+        k = k.view(bsz, self.num_heads, self.head_dim, length).transpose(-2, -1)
+        v = v.view(bsz, self.num_heads, self.head_dim, length).transpose(-2, -1)
+
+        # 在时间维度 L 上计算全局注意力: [B, H, L, L]
+        attn = torch.matmul(q, k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+        out = torch.matmul(attn, v)
+
+        # [B, Head, L, HeadDim] -> [B, C, L]
+        out = out.transpose(-2, -1).contiguous().view(bsz, channels, length)
+        return x + self.project_out(out)
+
+
 class ConditionalResBlock1D(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, cond_dim: int, dropout: float = 0.0):
         super().__init__()
@@ -155,7 +196,8 @@ class ConditionalMHTAUNet1D(nn.Module):
 
         channels = [base_channels * int(mult) for mult in channel_mults]
         self.attention_levels = set(int(level) for level in attention_levels)
-        self.input_conv = nn.Conv1d(in_channels, channels[0], kernel_size=7, padding=3)
+        # 使用大卷积核扩大浅层感受野，帮助模型更早接触到长周期结构
+        self.input_conv = nn.Conv1d(in_channels, channels[0], kernel_size=31, padding=15)
 
         self.down_blocks = nn.ModuleList()
         self.downsamples = nn.ModuleList()
@@ -175,6 +217,8 @@ class ConditionalMHTAUNet1D(nn.Module):
 
         self.mid_res = ConditionalResBlock1D(channels[-1], channels[-1], time_embed_dim, dropout)
         self.mid_attn = MHTABlock1D(channels[-1], num_heads=num_heads)
+        # 在瓶颈层加入时间维全局注意力，用于建模严格周期性的长程依赖
+        self.mid_temporal_attn = TemporalAttention1D(channels[-1], num_heads=num_heads)
 
         self.up_blocks = nn.ModuleList()
         self.upsamples = nn.ModuleList()
@@ -219,6 +263,7 @@ class ConditionalMHTAUNet1D(nn.Module):
 
         h = self.mid_res(h, cond)
         h = self.mid_attn(h)
+        h = self.mid_temporal_attn(h)
 
         for level, block in enumerate(self.up_blocks):
             skip = skips.pop()
