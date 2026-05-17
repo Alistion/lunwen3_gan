@@ -37,7 +37,7 @@ CONFIG = {
     "label_embed_dim": 192,
     "dropout": 0.05,
     "attention_levels": [1, 2, 3],
-    "lambda_fft": 0.05,
+    "lambda_fft": 0.01,
     "grad_clip": 1.0,
     "num_workers": 2,
     "save_every": 500,
@@ -179,17 +179,22 @@ def main(config: dict = CONFIG) -> None:
                 # 1) 标准 DDPM 噪声预测损失（时域）
                 noise_loss = F.mse_loss(pred_noise, noise)
 
-                # 2) 根据预测噪声反推预测的干净信号 x0
+                # 2) 根据预测噪声反推预测的干净信号 x0，并对标准化数据做宽松限幅
                 alpha_bar_t = scheduler._extract(scheduler.alphas_cumprod, timesteps, x_t.shape)
                 pred_x0 = (x_t - torch.sqrt(1.0 - alpha_bar_t) * pred_noise) / torch.sqrt(alpha_bar_t)
+                pred_x0 = torch.clamp(pred_x0, -5.0, 5.0)
 
-                # 3) 仅比较幅值谱，避免直接惩罚相位偏移
-                x0_fft_mag = torch.abs(torch.fft.rfft(x0, dim=-1))
-                pred_x0_fft_mag = torch.abs(torch.fft.rfft(pred_x0, dim=-1))
-                fft_loss = F.mse_loss(pred_x0_fft_mag, x0_fft_mag)
+                # 3) 使用正交归一化 FFT，避免长序列带来的幅值膨胀
+                fft_real = torch.fft.rfft(x0, dim=-1, norm="ortho")
+                fft_pred = torch.fft.rfft(pred_x0, dim=-1, norm="ortho")
 
-                # 4) 联合优化时域噪声拟合与频域幅值重建
-                loss = noise_loss + float(config.get("lambda_fft", 0.05)) * fft_loss
+                # 4) 比较对数幅值谱，使大峰值与小峰值的优化更平滑
+                mag_real = torch.log(torch.abs(fft_real) + 1e-7)
+                mag_pred = torch.log(torch.abs(fft_pred) + 1e-7)
+                fft_loss = F.l1_loss(mag_pred, mag_real)
+
+                # 5) 联合优化时域噪声拟合与稳健的频域重建
+                loss = noise_loss + float(config.get("lambda_fft", 0.01)) * fft_loss
 
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
