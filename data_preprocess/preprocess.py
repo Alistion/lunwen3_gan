@@ -41,10 +41,10 @@ CONFIG = {
     "seed": 42,
     "train_counts": {
         "normal": 50,
-        "unbalance": 20,
-        "misalignment": 20,
-        "crack": 20,
-        "looseness": 20,
+        "unbalance": 150,
+        "misalignment": 150,
+        "crack": 150,
+        "looseness": 150,
     },
 }
 

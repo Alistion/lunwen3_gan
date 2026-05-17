@@ -17,8 +17,8 @@ from utils.run_paths import resolve_existing_run_dir
 
 CONFIG = {
     "real_npz": Path("processed/mhta_base_dataset/train.npz"),
-    "generated_npz": Path("processed/mhta_augmented_dataset/generated_only.npz"),
     "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
+    "generated_subdir": "generated_dataset",
     "run_id": None,
     "fs": 2048,
     "max_freq": 300.0,
@@ -340,8 +340,9 @@ def main(config: dict = CONFIG) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(int(config["seed"]))
 
+    generated_npz = run_dir / str(config.get("generated_subdir", "generated_dataset")) / "generated_only.npz"
     x_real, y_real = load_xy(Path(config["real_npz"]))
-    x_gen, y_gen = load_xy(Path(config["generated_npz"]))
+    x_gen, y_gen = load_xy(generated_npz)
     logger.info("Loaded real X=%s, generated X=%s", x_real.shape, x_gen.shape)
 
     plot_df = save_class_sample_plots(x_real, y_real, x_gen, y_gen, out_dir, config, rng)

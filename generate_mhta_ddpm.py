@@ -19,11 +19,11 @@ CONFIG = {
     "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
     "run_id": None,
     "ckpt": None,
-    "out_dir": Path("processed/mhta_augmented_dataset"),
-    "samples_per_fault_class": 10,
+    "generated_subdir": "generated_dataset",
+    "samples_per_fault_class": 100,
     "batch_size": 32,
     "signal_length": 2048,
-    "sampler": "ddim",
+    "sampler": "ddpm",
     "num_inference_steps": 200,
     "eta": 0.0,
     "rpm": 740.0,
@@ -102,7 +102,8 @@ def main(config: dict = CONFIG) -> None:
     logger = setup_logger()
     set_seed(int(config["seed"]))
     device = get_device(str(config["device"]))
-    out_dir = Path(config["out_dir"])
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
+    out_dir = run_dir / str(config.get("generated_subdir", "generated_dataset"))
     out_dir.mkdir(parents=True, exist_ok=True)
 
     train_path = Path(config["data_dir"]) / "train.npz"
