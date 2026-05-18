@@ -16,7 +16,7 @@ from utils.run_paths import resolve_existing_run_dir
 
 
 CONFIG = {
-    "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
+    "run_root": Path("runs/wgan_v1"),
     "generated_subdir": "generated_dataset",
     "run_id": None,
     "fs": 2048,
@@ -28,12 +28,12 @@ CONFIG = {
 
 def setup_logger() -> logging.Logger:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
-    return logging.getLogger("plot_mhta_ddpm_generated")
+    return logging.getLogger("plot_wgan_generated")
 
 
 def load_generated(npz_path: Path) -> tuple[np.ndarray, np.ndarray, list[str]]:
     if not npz_path.exists():
-        raise FileNotFoundError(f"Missing generated npz: {npz_path}. Please run python generate_mhta_ddpm.py first.")
+        raise FileNotFoundError(f"Missing generated npz: {npz_path}. Please run python generate_wgan.py first.")
     data = np.load(npz_path, allow_pickle=True)
     x = np.asarray(data["X"], dtype=np.float32)
     y = np.asarray(data["y"], dtype=np.int64)
@@ -76,7 +76,7 @@ def plot_class_samples(
     fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=False)
     for idx in selected:
         axes[0].plot(t, x[idx], linewidth=0.9, alpha=0.85, label=f"sample {idx}")
-    axes[0].set_title(f"MHTA-DDPM generated {class_name} - time domain")
+    axes[0].set_title(f"WGAN generated {class_name} - time domain")
     axes[0].set_xlabel("Time (s)")
     axes[0].set_ylabel("Amplitude")
     axes[0].grid(alpha=0.25)
@@ -85,7 +85,7 @@ def plot_class_samples(
         freq, amp = amplitude_spectrum(x[idx], fs)
         mask = freq <= float(max_freq)
         axes[1].plot(freq[mask], amp[mask], linewidth=0.9, alpha=0.85, label=f"sample {idx}")
-    axes[1].set_title(f"MHTA-DDPM generated {class_name} - frequency domain")
+    axes[1].set_title(f"WGAN generated {class_name} - frequency domain")
     axes[1].set_xlabel("Frequency (Hz)")
     axes[1].set_ylabel("Amplitude")
     axes[1].grid(alpha=0.25)
@@ -212,7 +212,7 @@ def main(config: dict = CONFIG) -> None:
         fs=int(config["fs"]),
         out_path=out_dir / "generated_preview_samples_data.csv",
     )
-    logger.info("Saved MHTA-DDPM preview plots to %s", out_dir)
+    logger.info("Saved WGAN preview plots to %s", out_dir)
 
 
 if __name__ == "__main__":

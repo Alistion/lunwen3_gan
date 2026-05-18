@@ -86,9 +86,16 @@ def load_model(config: dict, device: torch.device) -> tuple[UNET_1D, DDPM_Schedu
 
 def resolve_checkpoint_path(config: dict) -> Path:
     explicit_ckpt = config.get("ckpt")
+    run_id = config.get("run_id")
+    if not explicit_ckpt and isinstance(run_id, str) and run_id.endswith(".pt"):
+        explicit_ckpt = run_id
+        run_id = None
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), run_id)
     if explicit_ckpt:
-        return Path(explicit_ckpt)
-    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
+        ckpt_path = Path(explicit_ckpt)
+        if ckpt_path.is_absolute() or ckpt_path.parent != Path("."):
+            return ckpt_path
+        return run_dir / "checkpoints" / ckpt_path.name
     return run_dir / "checkpoints" / "best_model.pt"
 
 

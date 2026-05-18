@@ -17,10 +17,10 @@ from utils.run_paths import resolve_existing_run_dir
 
 CONFIG = {
     "real_npz": Path("processed/mhta_base_dataset/train.npz"),
-    "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
+    "run_root": Path("runs/baseline_ddpm_v1"),
     "generated_subdir": "generated_dataset",
     "run_id": None,
-    "ckpt": "epoch_500.pt",
+    "ckpt": None,
     "fs": 2048,
     "max_freq": 300.0,
     "fd_downsample": 256,
@@ -35,7 +35,7 @@ CONFIG = {
 
 def setup_logger() -> logging.Logger:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
-    return logging.getLogger("evaluate_mhta_generated_metrics")
+    return logging.getLogger("evaluate_baseline_generated_metrics")
 
 
 def resolve_run_dir(config: dict) -> Path:
@@ -151,7 +151,7 @@ def plot_one_class_comparison(
             color="tab:orange",
             linewidth=0.85,
             alpha=0.45 + 0.15 * i,
-            label=f"MHTA generated #{int(generated_index)}",
+            label=f"Baseline-DDPM generated #{int(generated_index)}",
         )
     axes[0].set_title(f"{class_name} time domain")
     axes[0].set_xlabel("Time (s)")
@@ -179,7 +179,7 @@ def plot_one_class_comparison(
             color="tab:orange",
             linewidth=0.85,
             alpha=0.45 + 0.15 * i,
-            label=f"MHTA generated #{int(generated_index)}",
+            label=f"Baseline-DDPM generated #{int(generated_index)}",
         )
     axes[1].set_title(f"{class_name} frequency domain")
     axes[1].set_xlabel("Frequency (Hz)")
@@ -188,7 +188,7 @@ def plot_one_class_comparison(
     axes[1].legend(fontsize=7, ncol=2)
 
     fig.tight_layout()
-    fig.savefig(out_dir / f"{label}_{class_name}_real_vs_mhta_time_freq.png", dpi=220)
+    fig.savefig(out_dir / f"{label}_{class_name}_real_vs_baseline_time_freq.png", dpi=220)
     plt.close(fig)
 
 
@@ -223,7 +223,7 @@ def save_class_sample_plots(
             out_dir=plot_dir,
             config=config,
         )
-        plot_path = (plot_dir / f"{label}_{class_name}_real_vs_mhta_time_freq.png").as_posix()
+        plot_path = (plot_dir / f"{label}_{class_name}_real_vs_baseline_time_freq.png").as_posix()
         max_rows = max(len(real_selected), len(gen_selected))
         for i in range(max_rows):
             rows.append(
@@ -395,7 +395,7 @@ def main(config: dict = CONFIG) -> None:
     logger.info("Loaded real X=%s, generated X=%s", x_real.shape, x_gen.shape)
 
     plot_df = save_class_sample_plots(x_real, y_real, x_gen, y_gen, out_dir, config, rng)
-    plot_df.to_csv(out_dir / "mhta_sample_plot_indices.csv", index=False)
+    plot_df.to_csv(out_dir / "baseline_sample_plot_indices.csv", index=False)
 
     pair_rows = []
     for class_name in CLASS_NAMES:
@@ -409,7 +409,7 @@ def main(config: dict = CONFIG) -> None:
         pair_rows.extend(evaluate_pairs_for_class(real_c, gen_c, class_name, label, config, rng))
 
     pair_df = pd.DataFrame(pair_rows)
-    pair_df.to_csv(out_dir / "mhta_pair_metrics.csv", index=False)
+    pair_df.to_csv(out_dir / "baseline_pair_metrics.csv", index=False)
 
     summary = summarize_by_class(pair_df)
     summary = add_topsis_ci(summary, float(config["eps"]))
@@ -420,17 +420,17 @@ def main(config: dict = CONFIG) -> None:
         int(config.get("ci_bootstrap_repeats", 1000)),
         int(config["seed"]),
     )
-    summary.to_csv(out_dir / "mhta_generated_quality_metrics.csv", index=False)
+    summary.to_csv(out_dir / "baseline_generated_quality_metrics.csv", index=False)
 
     overall = overall_row(summary)
     if overall:
-        pd.DataFrame([overall]).to_csv(out_dir / "mhta_overall_metrics.csv", index=False)
+        pd.DataFrame([overall]).to_csv(out_dir / "baseline_overall_metrics.csv", index=False)
 
-    logger.info("Saved pair metrics to %s", out_dir / "mhta_pair_metrics.csv")
-    logger.info("Saved class metrics with CI to %s", out_dir / "mhta_generated_quality_metrics.csv")
+    logger.info("Saved pair metrics to %s", out_dir / "baseline_pair_metrics.csv")
+    logger.info("Saved class metrics with CI to %s", out_dir / "baseline_generated_quality_metrics.csv")
     logger.info("Saved sample time/frequency plots to %s", out_dir / "sample_time_freq")
     if overall:
-        logger.info("Saved overall metrics to %s", out_dir / "mhta_overall_metrics.csv")
+        logger.info("Saved overall metrics to %s", out_dir / "baseline_overall_metrics.csv")
 
 
 if __name__ == "__main__":

@@ -16,15 +16,27 @@ CONFIG = {"run_root": "runs/dcgan_v1", "run_id": None, "ckpt": None, "generated_
 
 
 def resolve_checkpoint_path(config: dict) -> Path:
-    if config.get("ckpt"):
-        return Path(config["ckpt"])
-    return resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id")) / "checkpoints" / "best_model.pt"
+    explicit_ckpt = config.get("ckpt")
+    run_id = config.get("run_id")
+    if not explicit_ckpt and isinstance(run_id, str) and run_id.endswith(".pt"):
+        explicit_ckpt = run_id
+        run_id = None
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), run_id)
+    if explicit_ckpt:
+        ckpt_path = Path(explicit_ckpt)
+        if ckpt_path.is_absolute() or ckpt_path.parent != Path("."):
+            return ckpt_path
+        return run_dir / "checkpoints" / ckpt_path.name
+    return run_dir / "checkpoints" / "best_model.pt"
 
 
 def main(config: dict = CONFIG) -> None:
     logger = setup_logger("generate_dcgan")
     set_seed(int(config["seed"])); device = get_device(str(config["device"]))
-    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id")); out_dir = run_dir / str(config["generated_subdir"]); out_dir.mkdir(parents=True, exist_ok=True)
+    run_id = config.get("run_id")
+    if not config.get("ckpt") and isinstance(run_id, str) and run_id.endswith(".pt"):
+        run_id = None
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), run_id); out_dir = run_dir / str(config["generated_subdir"]); out_dir.mkdir(parents=True, exist_ok=True)
     payload = torch.load(resolve_checkpoint_path(config), map_location=device)
     generator = ConditionalGenerator1D(**payload["model_kwargs"]).to(device); generator.load_state_dict(payload["generator_state_dict"]); generator.eval()
     xs, ys = [], []

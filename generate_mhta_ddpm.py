@@ -18,7 +18,7 @@ CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
     "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
     "run_id": None,
-    "ckpt": None,
+    "ckpt": "epoch_500.pt",
     "generated_subdir": "generated_dataset",
     "samples_per_fault_class": 100,
     "batch_size": 32,
@@ -62,9 +62,16 @@ def load_model(config: dict, device: torch.device) -> tuple[ConditionalMHTAUNet1
 
 def resolve_checkpoint_path(config: dict) -> Path:
     explicit_ckpt = config.get("ckpt")
+    run_id = config.get("run_id")
+    if not explicit_ckpt and isinstance(run_id, str) and run_id.endswith(".pt"):
+        explicit_ckpt = run_id
+        run_id = None
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), run_id)
     if explicit_ckpt:
-        return Path(explicit_ckpt)
-    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
+        ckpt_path = Path(explicit_ckpt)
+        if ckpt_path.is_absolute() or ckpt_path.parent != Path("."):
+            return ckpt_path
+        return run_dir / "checkpoints" / ckpt_path.name
     return run_dir / "checkpoints" / "best_model.pt"
 
 
@@ -102,7 +109,10 @@ def main(config: dict = CONFIG) -> None:
     logger = setup_logger()
     set_seed(int(config["seed"]))
     device = get_device(str(config["device"]))
-    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
+    run_id = config.get("run_id")
+    if not config.get("ckpt") and isinstance(run_id, str) and run_id.endswith(".pt"):
+        run_id = None
+    run_dir = resolve_existing_run_dir(Path(config["run_root"]), run_id)
     out_dir = run_dir / str(config.get("generated_subdir", "generated_dataset"))
     out_dir.mkdir(parents=True, exist_ok=True)
 

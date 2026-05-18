@@ -7,6 +7,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from utils.signal_utils import CLASS_NAMES
 from utils.run_paths import resolve_existing_run_dir
@@ -55,19 +56,15 @@ def choose_indices(indices: np.ndarray, count: int, rng: np.random.Generator) ->
 
 def plot_class_grid(
     x: np.ndarray,
-    y: np.ndarray,
+    selected: np.ndarray,
     label: int,
     class_name: str,
     out_dir: Path,
     fs: int,
-    samples_per_class: int,
     max_freq: float,
-    rng: np.random.Generator,
 ) -> None:
-    indices = np.flatnonzero(y == label)
-    if len(indices) == 0:
+    if len(selected) == 0:
         return
-    selected = choose_indices(indices, samples_per_class, rng)
     t = np.arange(x.shape[1], dtype=np.float32) / float(fs)
     fig, axes = plt.subplots(len(selected), 2, figsize=(14, 3.5 * len(selected)), squeeze=False)
     for row, idx in enumerate(selected):
@@ -91,6 +88,43 @@ def plot_class_grid(
     plt.close(fig)
 
 
+def save_selected_samples_csv(
+    x: np.ndarray,
+    selected_by_class: dict[int, np.ndarray],
+    class_names: list[str],
+    fs: int,
+    out_path: Path,
+) -> None:
+    export_columns: dict[str, np.ndarray] = {}
+    signal_length = x.shape[1]
+    time_s = np.arange(signal_length, dtype=np.float32) / float(fs)
+
+    for label, selected in selected_by_class.items():
+        if len(selected) == 0:
+            continue
+        class_name = class_names[label]
+        export_columns[f"{class_name}_time_s"] = time_s
+
+        spectra = []
+        freq_hz = None
+        for idx in selected:
+            export_columns[f"{class_name}_sample{int(idx)}_generated_waveform"] = x[idx].astype(np.float32)
+            freq_hz, amp = amplitude_spectrum(x[idx], fs)
+            spectra.append(amp)
+
+        freq_col = np.full(signal_length, np.nan, dtype=np.float32)
+        freq_col[: len(freq_hz)] = freq_hz
+        export_columns[f"{class_name}_freq_hz"] = freq_col
+
+        for idx, amp in zip(selected, spectra):
+            amp_col = np.full(signal_length, np.nan, dtype=np.float32)
+            amp_col[: len(amp)] = amp
+            export_columns[f"{class_name}_sample{int(idx)}_generated_fft_mag"] = amp_col
+
+    if export_columns:
+        pd.DataFrame(export_columns).to_csv(out_path, index=False)
+
+
 def main(config: dict = CONFIG) -> None:
     logger = setup_logger()
     run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
@@ -98,18 +132,27 @@ def main(config: dict = CONFIG) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     x, y, class_names = load_generated(Path(config["generated_npz"]))
     rng = np.random.default_rng(int(config["seed"]))
+    selected_by_class = {
+        label: choose_indices(np.flatnonzero(y == label), int(config["samples_per_class"]), rng)
+        for label in range(len(class_names))
+    }
     for label, class_name in enumerate(class_names):
         plot_class_grid(
             x=x,
-            y=y,
+            selected=selected_by_class[label],
             label=label,
             class_name=class_name,
             out_dir=out_dir,
             fs=int(config["fs"]),
-            samples_per_class=int(config["samples_per_class"]),
             max_freq=float(config["max_freq"]),
-            rng=rng,
         )
+    save_selected_samples_csv(
+        x=x,
+        selected_by_class=selected_by_class,
+        class_names=class_names,
+        fs=int(config["fs"]),
+        out_path=out_dir / "generated_preview_samples_data.csv",
+    )
     logger.info("Saved MB-DDPM preview plots to %s", out_dir)
 
 

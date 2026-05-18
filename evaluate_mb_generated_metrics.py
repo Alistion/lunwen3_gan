@@ -20,6 +20,7 @@ CONFIG = {
     "generated_npz": Path("processed/mb_augmented_dataset/generated_only.npz"),
     "run_root": Path("runs/mb_ddpm_lunwen3_v1"),
     "run_id": None,
+    "ckpt": None,
     "fs": 2048,
     "max_freq": 300.0,
     "fd_downsample": 256,
@@ -28,12 +29,20 @@ CONFIG = {
     "plot_samples_per_class": 3,
     "seed": 42,
     "eps": 1e-8,
+    "ci_bootstrap_repeats": 1000,
 }
 
 
 def setup_logger() -> logging.Logger:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     return logging.getLogger("evaluate_mb_generated_metrics")
+
+
+def resolve_run_dir(config: dict) -> Path:
+    run_id = config.get("run_id")
+    if not config.get("ckpt") and isinstance(run_id, str) and run_id.endswith(".pt"):
+        run_id = None
+    return resolve_existing_run_dir(Path(config["run_root"]), run_id)
 
 
 def load_xy(npz_path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -318,6 +327,44 @@ def add_topsis_ci(summary: pd.DataFrame, eps: float) -> pd.DataFrame:
     return out
 
 
+def add_ci_std_by_bootstrap(
+    summary: pd.DataFrame,
+    pair_df: pd.DataFrame,
+    eps: float,
+    repeats: int,
+    seed: int,
+) -> pd.DataFrame:
+    """Estimate CI std without changing the existing class-level CI definition."""
+    if summary.empty:
+        summary["CI_std"] = []
+        return summary
+
+    bootstrap_rng = np.random.default_rng(int(seed))
+    grouped_pairs = {
+        (str(class_name), int(label)): group.reset_index(drop=True)
+        for (class_name, label), group in pair_df.groupby(["class_name", "label"], sort=False)
+    }
+    summary_keys = list(zip(summary["class_name"], summary["label"]))
+    ci_samples = np.empty((int(repeats), len(summary)), dtype=np.float64)
+
+    for i in range(int(repeats)):
+        sampled_groups = []
+        for class_name, label in summary_keys:
+            group = grouped_pairs[(str(class_name), int(label))]
+            sampled_indices = bootstrap_rng.integers(0, len(group), size=len(group))
+            sampled_groups.append(group.iloc[sampled_indices])
+
+        bootstrap_pairs = pd.concat(sampled_groups, ignore_index=True)
+        bootstrap_summary = summarize_by_class(bootstrap_pairs)
+        bootstrap_summary = bootstrap_summary.set_index(["class_name", "label"]).loc[summary_keys].reset_index()
+        bootstrap_summary = add_topsis_ci(bootstrap_summary, eps)
+        ci_samples[i] = bootstrap_summary["CI"].to_numpy(dtype=np.float64)
+
+    out = summary.copy()
+    out["CI_std"] = np.std(ci_samples, axis=0, ddof=1) if int(repeats) > 1 else 0.0
+    return out
+
+
 def overall_row(summary: pd.DataFrame) -> dict:
     if summary.empty:
         return {}
@@ -330,12 +377,14 @@ def overall_row(summary: pd.DataFrame) -> dict:
     }
     for key in ("RMSE", "PSNR", "FSCS", "FD", "CI"):
         row[key] = float(np.sum(summary[key].to_numpy(dtype=np.float64) * weights))
+    if "CI_std" in summary.columns:
+        row["CI_std"] = float(np.sqrt(np.sum(np.square(weights * summary["CI_std"].to_numpy(dtype=np.float64)))))
     return row
 
 
 def main(config: dict = CONFIG) -> None:
     logger = setup_logger()
-    run_dir = resolve_existing_run_dir(Path(config["run_root"]), config.get("run_id"))
+    run_dir = resolve_run_dir(config)
     out_dir = run_dir / "evaluation"
     out_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(int(config["seed"]))
@@ -363,6 +412,13 @@ def main(config: dict = CONFIG) -> None:
 
     summary = summarize_by_class(pair_df)
     summary = add_topsis_ci(summary, float(config["eps"]))
+    summary = add_ci_std_by_bootstrap(
+        summary,
+        pair_df,
+        float(config["eps"]),
+        int(config.get("ci_bootstrap_repeats", 1000)),
+        int(config["seed"]),
+    )
     summary.to_csv(out_dir / "mb_generated_quality_metrics.csv", index=False)
 
     overall = overall_row(summary)
