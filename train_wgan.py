@@ -17,7 +17,7 @@ CONFIG = {
     "data_dir": "processed/mhta_base_dataset",
     "run_root": "runs/wgan_v1",
     "run_id": None,
-    "epochs": 2000,
+    "epochs": 5000,
     "batch_size": 32,
     "lr": 5e-5,
     "latent_dim": 128,

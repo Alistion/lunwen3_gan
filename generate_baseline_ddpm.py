@@ -6,8 +6,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from models.baseline_ddpm_1d import ConditionalUNet1D
-from models.mhta_ddpm_1d import DDPMScheduler1D
+from models.baseline_ddpm_1d import ConditionalUNet1D, DDPMScheduler1D
 from utils.baseline_utils import get_device, setup_logger
 from utils.run_paths import resolve_existing_run_dir
 from utils.seed import set_seed
@@ -21,7 +20,7 @@ CONFIG = {
     "samples_per_fault_class": 100,
     "batch_size": 32,
     "signal_length": 2048,
-    "sampler": "ddim",
+    "sampler": "ddpm",
     "num_inference_steps": 200,
     "eta": 0.0,
     "seed": 42,

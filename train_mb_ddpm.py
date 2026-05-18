@@ -19,14 +19,14 @@ CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
     "run_root": Path("runs/mb_ddpm_lunwen3_v1"),
     "run_id": None,
-    "epochs": 2000,
+    "epochs": 3000,
     "batch_size": 32,
     "lr": 1e-4,
     "num_time_steps": 1000,
     "num_classes": 5,
     "ema_decay": 0.9999,
     "signal_length": 2048,
-    "save_every": 500,
+    "save_every": 1000,
 }
 
 class SignalDataset(Dataset):

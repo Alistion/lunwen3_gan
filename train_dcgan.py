@@ -18,11 +18,15 @@ CONFIG = {
     "data_dir": "processed/mhta_base_dataset",
     "run_root": "runs/dcgan_v1",
     "run_id": None,
-    "epochs": 2000,
+    "epochs": 5000,
     "batch_size": 32,
-    "lr": 2e-4,
+    "g_lr": 2e-4,
+    "d_lr": 5e-5,
     "beta1": 0.5,
     "beta2": 0.999,
+    "real_label": 0.9,
+    "instance_noise_std": 0.05,
+    "instance_noise_decay_epochs": 1000,
     "latent_dim": 128,
     "signal_length": 2048,
     "num_classes": 5,
@@ -64,22 +68,27 @@ def main(config: dict = CONFIG) -> None:
     loader = DataLoader(dataset, batch_size=int(config["batch_size"]), shuffle=True, num_workers=int(config["num_workers"]), pin_memory=device.type == "cuda", drop_last=True)
     generator = ConditionalGenerator1D(**model_kwargs(config)).to(device)
     discriminator = ConditionalDiscriminator1D(num_classes=int(config["num_classes"]), signal_length=int(config["signal_length"]), base_channels=int(config["base_channels"])).to(device)
-    g_opt = torch.optim.Adam(generator.parameters(), lr=float(config["lr"]), betas=(float(config["beta1"]), float(config["beta2"])))
-    d_opt = torch.optim.Adam(discriminator.parameters(), lr=float(config["lr"]), betas=(float(config["beta1"]), float(config["beta2"])))
+    g_opt = torch.optim.Adam(generator.parameters(), lr=float(config["g_lr"]), betas=(float(config["beta1"]), float(config["beta2"])))
+    d_opt = torch.optim.Adam(discriminator.parameters(), lr=float(config["d_lr"]), betas=(float(config["beta1"]), float(config["beta2"])))
     best_g = float("inf")
     logger.info("Training conditional DCGAN on %d samples with device=%s", len(dataset), device)
     f, writer = open_csv_logger(out_dir / "train_log.csv", ["epoch", "g_loss", "d_loss", "best_g_loss"])
     with f:
         for epoch in range(1, int(config["epochs"]) + 1):
             g_losses, d_losses = [], []
+            noise_decay = max(0.0, 1.0 - (epoch - 1) / max(1, int(config["instance_noise_decay_epochs"])))
+            noise_std = float(config["instance_noise_std"]) * noise_decay
             for real, labels in tqdm(loader, desc=f"dcgan epoch {epoch:03d}", leave=False):
                 real, labels = real.to(device), labels.to(device)
                 bsz = real.size(0)
                 z = torch.randn(bsz, int(config["latent_dim"]), device=device)
                 fake = generator(z, labels)
-                d_real = discriminator(real, labels)
-                d_fake = discriminator(fake.detach(), labels)
-                d_loss = F.binary_cross_entropy_with_logits(d_real, torch.ones_like(d_real)) + F.binary_cross_entropy_with_logits(d_fake, torch.zeros_like(d_fake))
+                real_for_d = real + noise_std * torch.randn_like(real) if noise_std > 0 else real
+                fake_for_d = fake.detach() + noise_std * torch.randn_like(fake) if noise_std > 0 else fake.detach()
+                d_real = discriminator(real_for_d, labels)
+                d_fake = discriminator(fake_for_d, labels)
+                real_targets = torch.full_like(d_real, float(config["real_label"]))
+                d_loss = F.binary_cross_entropy_with_logits(d_real, real_targets) + F.binary_cross_entropy_with_logits(d_fake, torch.zeros_like(d_fake))
                 d_opt.zero_grad(set_to_none=True); d_loss.backward(); d_opt.step()
                 z = torch.randn(bsz, int(config["latent_dim"]), device=device)
                 fake = generator(z, labels)

@@ -8,8 +8,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from models.baseline_ddpm_1d import ConditionalUNet1D
-from models.mhta_ddpm_1d import DDPMScheduler1D
+from models.baseline_ddpm_1d import ConditionalUNet1D, DDPMScheduler1D
 from utils.baseline_utils import SignalDataset, get_device, open_csv_logger, setup_logger, write_json
 from utils.run_paths import create_run_dir
 from utils.seed import set_seed
@@ -21,18 +20,22 @@ CONFIG = {
     "run_id": None,
     "epochs": 5000,
     "batch_size": 16,
-    "lr": 1e-4,
-    "weight_decay": 1e-4,
+    "lr": 2e-4,
     "num_train_timesteps": 1000,
+    "beta_schedule": "linear",
+    "beta_start": 1e-4,
+    "beta_end": 2e-2,
     "clip_sample": True,
     "clip_range": 5.0,
     "signal_length": 2048,
     "num_classes": 5,
-    "base_channels": 48,
-    "channel_mults": [1, 2, 4, 8],
-    "time_embed_dim": 192,
-    "label_embed_dim": 192,
-    "dropout": 0.05,
+    "base_channels": 128,
+    "channel_mults": [1, 2, 2, 2],
+    "num_res_blocks": 2,
+    "attention_levels": [1],
+    "time_embed_dim": 512,
+    "label_embed_dim": 512,
+    "dropout": 0.1,
     "grad_clip": 1.0,
     "num_workers": 2,
     "save_every": 500,
@@ -47,6 +50,8 @@ def model_kwargs(config: dict) -> dict:
         "num_classes": int(config["num_classes"]),
         "base_channels": int(config["base_channels"]),
         "channel_mults": tuple(int(v) for v in config["channel_mults"]),
+        "num_res_blocks": int(config["num_res_blocks"]),
+        "attention_levels": tuple(int(v) for v in config["attention_levels"]),
         "time_embed_dim": int(config["time_embed_dim"]),
         "label_embed_dim": int(config["label_embed_dim"]),
         "dropout": float(config["dropout"]),
@@ -56,6 +61,9 @@ def model_kwargs(config: dict) -> dict:
 def scheduler_kwargs(config: dict) -> dict:
     return {
         "num_train_timesteps": int(config["num_train_timesteps"]),
+        "beta_schedule": str(config["beta_schedule"]),
+        "beta_start": float(config["beta_start"]),
+        "beta_end": float(config["beta_end"]),
         "clip_sample": bool(config["clip_sample"]),
         "clip_range": float(config["clip_range"]),
     }
@@ -87,7 +95,7 @@ def main(config: dict = CONFIG) -> None:
     loader = DataLoader(dataset, batch_size=int(config["batch_size"]), shuffle=True, num_workers=int(config["num_workers"]), pin_memory=device.type == "cuda", drop_last=True)
     model = ConditionalUNet1D(**model_kwargs(config)).to(device)
     scheduler = DDPMScheduler1D(**scheduler_kwargs(config)).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=float(config["lr"]), weight_decay=float(config["weight_decay"]))
+    optimizer = torch.optim.Adam(model.parameters(), lr=float(config["lr"]))
     best_loss = float("inf")
     logger.info("Training baseline DDPM on %d samples with device=%s", len(dataset), device)
     f, writer = open_csv_logger(out_dir / "train_log.csv", ["epoch", "loss", "best_loss"])

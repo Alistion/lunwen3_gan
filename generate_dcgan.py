@@ -12,7 +12,15 @@ from utils.run_paths import resolve_existing_run_dir
 from utils.seed import set_seed
 from utils.signal_utils import CLASS_NAMES, LABEL_MAP, order_template_for_labels
 
-CONFIG = {"run_root": "runs/dcgan_v1", "run_id": None, "ckpt": None, "generated_subdir": "generated_dataset", "samples_per_fault_class": 100, "batch_size": 32, "seed": 42, "device": "cuda_if_available"}
+CONFIG = {"run_root": "runs/dcgan_v1", 
+        "run_id": None, 
+        "ckpt": None,
+        "generated_subdir": "generated_dataset",
+        "samples_per_fault_class": 100, 
+        "batch_size": 32, 
+        "seed": 42, 
+        "device": "cuda_if_available"
+}
 
 
 def resolve_checkpoint_path(config: dict) -> Path:

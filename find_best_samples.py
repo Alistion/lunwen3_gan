@@ -12,7 +12,7 @@ from utils.signal_utils import CLASS_NAMES
 
 
 CONFIG = {
-    "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
+    "run_root": Path("runs/baseline_ddpm_v1"),
     "run_id": None,
     "generated_subdir": "generated_dataset",
     "out_subdir": "best_sample_pairs",
