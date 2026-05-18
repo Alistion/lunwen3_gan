@@ -18,42 +18,43 @@ from utils.signal_utils import CLASS_NAMES
 
 
 CONFIG = {
+    "strict_paper_mode": False,
     "data_dir": "processed/mhta_base_dataset",
-  "run_root": "runs/omc_tf_mhta_ddpm_v1",
-  "run_id": None,
-  "epochs": 5000,
-  "batch_size": 16,
-  "lr": 0.0001,
-  "weight_decay": 0.0001,
-  "num_train_timesteps": 1000,
-  "beta_start": 0.0001,
-  "beta_end": 0.02,
-  "clip_sample": True,
-  "clip_range": 5.0,
-  "signal_length": 2048,
-  "num_classes": 5,
-  "base_channels": 48,
-  "channel_mults": [
-    1,
-    2,
-    4,
-    8
-  ],
-  "num_heads": 4,
-  "time_embed_dim": 192,
-  "label_embed_dim": 192,
-  "dropout": 0.05,
-  "attention_levels": [
-    1,
-    2,
-    3
-  ],
-  "lambda_fft": 0.05,
-  "grad_clip": 1.0,
-  "num_workers": 2,
-  "save_every": 500,
-  "seed": 42,
-  "device": "cuda_if_available"
+    "run_root": "runs/omc_tf_mhta_ddpm_v1",
+    "run_id": None,
+    "epochs": 5000,
+    "batch_size": 16,
+    "lr": 0.0001,
+    "weight_decay": 0.0001,
+    "num_train_timesteps": 1000,
+    "beta_start": 0.0001,
+    "beta_end": 0.02,
+    "clip_sample": True,
+    "clip_range": 5.0,
+    "signal_length": 2048,
+    "num_classes": 5,
+    "base_channels": 48,
+    "channel_mults": [
+        1,
+        2,
+        4,
+        8
+    ],
+    "num_heads": 4,
+    "time_embed_dim": 192,
+    "label_embed_dim": 192,
+    "dropout": 0.05,
+    "attention_levels": [
+        1,
+        2,
+        3
+    ],
+    "lambda_fft": 0.05,
+    "grad_clip": 1.0,
+    "num_workers": 2,
+    "save_every": 500,
+    "seed": 42,
+    "device": "cuda_if_available"
 }
 
 
@@ -100,6 +101,7 @@ def model_kwargs(config: dict) -> dict:
         "label_embed_dim": int(config["label_embed_dim"]),
         "dropout": float(config["dropout"]),
         "attention_levels": tuple(int(v) for v in config["attention_levels"]),
+        "strict_paper_mode": bool(config.get("strict_paper_mode", False)),
     }
 
 
@@ -190,26 +192,29 @@ def main(config: dict = CONFIG) -> None:
                 # 1) 标准 DDPM 噪声预测损失（时域）
                 loss_noise = F.mse_loss(pred_noise, noise)
 
-                # 2) 根据预测噪声反推预测的干净信号 x0，并做宽松限幅
-                alpha_bar_t = scheduler._extract(scheduler.alphas_cumprod, timesteps, x_t.shape)
-                pred_x0 = (x_t - torch.sqrt(1.0 - alpha_bar_t) * pred_noise) / torch.sqrt(alpha_bar_t)
-                pred_x0 = torch.clamp(pred_x0, -25.0, 25.0)
+                if not bool(config.get("strict_paper_mode", False)):
+                    # 2) 根据预测噪声反推预测的干净信号 x0，并做宽松限幅
+                    alpha_bar_t = scheduler._extract(scheduler.alphas_cumprod, timesteps, x_t.shape)
+                    pred_x0 = (x_t - torch.sqrt(1.0 - alpha_bar_t) * pred_noise) / torch.sqrt(alpha_bar_t)
+                    pred_x0 = torch.clamp(pred_x0, -25.0, 25.0)
 
-                # 3) 低频核心频段 FFT MSE 损失，强化 0~300Hz 峰值还原 (相当于天然的低通滤波器，过滤高频噪音)
-                fft_real = torch.fft.rfft(x0, dim=-1, norm="ortho")
-                fft_pred = torch.fft.rfft(pred_x0, dim=-1, norm="ortho")
-                mag_real = torch.abs(fft_real)
-                mag_pred = torch.abs(fft_pred)
-                core_mag_real = mag_real[:, :, :300]
-                core_mag_pred = mag_pred[:, :, :300]
-                loss_fft = F.mse_loss(core_mag_pred, core_mag_real)
+                    # 3) 低频核心频段 FFT MSE 损失，强化 0~300Hz 峰值还原 (相当于天然的低通滤波器，过滤高频噪音)
+                    fft_real = torch.fft.rfft(x0, dim=-1, norm="ortho")
+                    fft_pred = torch.fft.rfft(pred_x0, dim=-1, norm="ortho")
+                    mag_real = torch.abs(fft_real)
+                    mag_pred = torch.abs(fft_pred)
+                    core_mag_real = mag_real[:, :, :300]
+                    core_mag_pred = mag_pred[:, :, :300]
+                    loss_fft = F.mse_loss(core_mag_pred, core_mag_real)
 
-                # 删除了原来的第 4) 步 loss_diff 相关代码！
+                    # 删除了原来的第 4) 步 loss_diff 相关代码！
 
-                # 5) 联合优化噪声预测和低频峰值
-                lambda_fft = float(config.get("lambda_fft", 0.05))
-                # 只保留基础噪声 Loss 和 低频 FFT Loss
-                loss = loss_noise + lambda_fft * loss_fft 
+                    # 5) 联合优化噪声预测和低频峰值
+                    lambda_fft = float(config.get("lambda_fft", 0.05))
+                    # 只保留基础噪声 Loss 和 低频 FFT Loss
+                    loss = loss_noise + lambda_fft * loss_fft
+                else:
+                    loss = loss_noise
 
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()

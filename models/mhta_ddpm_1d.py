@@ -177,6 +177,7 @@ class ConditionalMHTAUNet1D(nn.Module):
         label_embed_dim: int = 192,
         dropout: float = 0.05,
         attention_levels: Iterable[int] = (1, 2, 3),
+        strict_paper_mode: bool = False,
     ):
         super().__init__()
         self.signal_length = int(signal_length)
@@ -196,8 +197,11 @@ class ConditionalMHTAUNet1D(nn.Module):
 
         channels = [base_channels * int(mult) for mult in channel_mults]
         self.attention_levels = set(int(level) for level in attention_levels)
-        # 使用大卷积核扩大浅层感受野，帮助模型更早接触到长周期结构
-        self.input_conv = nn.Conv1d(in_channels, channels[0], kernel_size=31, padding=15)
+        if strict_paper_mode:
+            self.input_conv = nn.Conv1d(in_channels, channels[0], kernel_size=3, padding=1)
+        else:
+            # 使用大卷积核扩大浅层感受野，帮助模型更早接触到长周期结构
+            self.input_conv = nn.Conv1d(in_channels, channels[0], kernel_size=31, padding=15)
 
         self.down_blocks = nn.ModuleList()
         self.downsamples = nn.ModuleList()
@@ -217,8 +221,11 @@ class ConditionalMHTAUNet1D(nn.Module):
 
         self.mid_res = ConditionalResBlock1D(channels[-1], channels[-1], time_embed_dim, dropout)
         self.mid_attn = MHTABlock1D(channels[-1], num_heads=num_heads)
-        # 在瓶颈层加入时间维全局注意力，用于建模严格周期性的长程依赖
-        self.mid_temporal_attn = TemporalAttention1D(channels[-1], num_heads=num_heads)
+        if strict_paper_mode:
+            self.mid_temporal_attn = nn.Identity()
+        else:
+            # 在瓶颈层加入时间维全局注意力，用于建模严格周期性的长程依赖
+            self.mid_temporal_attn = TemporalAttention1D(channels[-1], num_heads=num_heads)
 
         self.up_blocks = nn.ModuleList()
         self.upsamples = nn.ModuleList()
