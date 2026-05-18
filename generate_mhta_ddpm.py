@@ -18,7 +18,7 @@ CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
     "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
     "run_id": None,
-    "ckpt": "epoch_500.pt",
+    "ckpt": None,
     "generated_subdir": "generated_dataset",
     "samples_per_fault_class": 100,
     "batch_size": 32,

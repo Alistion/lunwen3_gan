@@ -20,7 +20,7 @@ CONFIG = {
     "run_root": Path("runs/omc_tf_mhta_ddpm_v1"),
     "generated_subdir": "generated_dataset",
     "run_id": None,
-    "ckpt": "epoch_500.pt",
+    "ckpt": None,
     "fs": 2048,
     "max_freq": 300.0,
     "fd_downsample": 256,
