@@ -18,10 +18,10 @@ from utils.run_paths import resolve_existing_run_dir
 CONFIG = {
     "data_dir": Path("processed/mhta_base_dataset"),
     "run_root": Path("runs/mb_ddpm_lunwen3_v1"),
-    "run_id": None,
-    "ckpt": None,
+    "run_id": "20260518_221102",
+    "ckpt": "runs/mb_ddpm_lunwen3_v1/20260518_221102/checkpoints/best_model.pt",
     "out_dir": Path("processed/mb_augmented_dataset"),
-    "samples_per_fault_class": 10,
+    "samples_per_fault_class": 100,
     "signal_length": 2048,
     "num_time_steps": 1000,
     "num_classes": 5,
@@ -65,7 +65,7 @@ def load_model(config: dict, device: torch.device) -> tuple[UNET_1D, DDPM_Schedu
     if not ckpt.exists():
         raise FileNotFoundError(f"MB-DDPM checkpoint does not exist: {ckpt}. Please run python train_mb_ddpm.py first.")
 
-    payload = torch.load(ckpt, map_location=device)
+    payload = torch.load(ckpt, map_location=device, weights_only=False)
     model_kwargs = payload.get(
         "model_kwargs",
         {
