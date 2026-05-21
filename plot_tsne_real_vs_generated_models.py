@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import logging
 import math
+import os
 from pathlib import Path
 
 import matplotlib
@@ -18,6 +19,9 @@ from utils.signal_utils import CLASS_NAMES
 CONFIG = {
     "real_npz": Path("processed/mhta_base_dataset/train.npz"),
     "out_dir": Path("runs/tsne_real_vs_generated"),
+    # Optional prefix for every output file. Example: "ablation_without_fft"
+    # produces "ablation_without_fft_tsne_real_vs_generated_models.png", etc.
+    "output_prefix": "runs/omc_tf_mhta_ddpm_v1/ablations/without_fft_loss",
     "labels_to_plot": [1, 2, 3, 4],
     "samples_per_class": 50,
     "seed": 42,
@@ -26,9 +30,14 @@ CONFIG = {
     "feature_mode": "time_log_fft",  # choices: log_fft, time, time_log_fft
     "time_feature_weight": 1.0,
     "freq_feature_weight": 1.0,
-    "tsne_perplexity": 30,
+    # t-SNE 配置
+    "tsne_perplexity": 10,
     "tsne_learning_rate": "auto",
-    "tsne_iter": 1500,
+    "tsne_iter": 500,
+    # UMAP 配置
+    "umap_n_neighbors": 10,
+    "umap_min_dist": 0.1,
+    
     "knn_k": 10,
     "point_size": 12,
     "dpi": 260,
@@ -55,7 +64,7 @@ CONFIG = {
 
 def setup_logger() -> logging.Logger:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
-    return logging.getLogger("plot_tsne_real_vs_generated_models")
+    return logging.getLogger("plot_tsne_umap_real_vs_generated_models")
 
 
 def load_xy(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -126,8 +135,7 @@ def run_tsne(features: np.ndarray, config: dict) -> np.ndarray:
         from sklearn.manifold import TSNE
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
-            "scikit-learn is required for t-SNE. Install it in your active environment, "
-            "for example: conda install scikit-learn"
+            "scikit-learn is required for t-SNE. Install it in your active environment: pip install scikit-learn"
         ) from exc
 
     perplexity = min(float(config["tsne_perplexity"]), max(5.0, (len(features) - 1) / 3.0))
@@ -142,6 +150,34 @@ def run_tsne(features: np.ndarray, config: dict) -> np.ndarray:
         return TSNE(max_iter=int(config["tsne_iter"]), **kwargs).fit_transform(features)
     except TypeError:
         return TSNE(n_iter=int(config["tsne_iter"]), **kwargs).fit_transform(features)
+
+
+def run_umap(features: np.ndarray, config: dict) -> np.ndarray:
+    os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba-cache")
+    try:
+        import umap
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "umap-learn is required for UMAP. Install it in your active environment: pip install umap-learn"
+        ) from exc
+    
+    reducer = umap.UMAP(
+        n_components=2,
+        n_neighbors=int(config.get("umap_n_neighbors", 15)),
+        min_dist=float(config.get("umap_min_dist", 0.1)),
+        random_state=int(config["seed"])
+    )
+    return reducer.fit_transform(features)
+
+
+def run_pca(features: np.ndarray) -> np.ndarray:
+    try:
+        from sklearn.decomposition import PCA
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "scikit-learn is required for PCA. Install it in your active environment: pip install scikit-learn"
+        ) from exc
+    return PCA(n_components=2, random_state=0).fit_transform(features)
 
 
 def centroid_distance(features: np.ndarray, source: np.ndarray, labels: np.ndarray) -> float:
@@ -200,7 +236,14 @@ def write_points_csv(path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
-def plot_panels(model_results: list[dict], out_path: Path, config: dict) -> None:
+def output_path(out_dir: Path, config: dict, filename: str) -> Path:
+    prefix = str(config.get("output_prefix", "")).strip()
+    if not prefix:
+        return out_dir / filename
+    return out_dir / f"{prefix}_{filename}"
+
+
+def plot_panels(model_results: list[dict], out_path: Path, config: dict, title_prefix: str) -> None:
     n = len(model_results)
     ncols = min(3, n)
     nrows = math.ceil(n / ncols)
@@ -268,7 +311,7 @@ def plot_panels(model_results: list[dict], out_path: Path, config: dict) -> None
     ]
     fig.legend(handles=class_handles, title="Class", loc="center right", bbox_to_anchor=(1.02, 0.58))
     fig.legend(handles=source_handles, title="Source", loc="center right", bbox_to_anchor=(1.02, 0.24))
-    fig.suptitle("t-SNE: Real vs Generated Samples by Model", y=1.01)
+    fig.suptitle(f"{title_prefix}: Real vs Generated Samples by Model", y=1.01)
     fig.tight_layout(rect=(0.0, 0.0, 0.88, 1.0))
     fig.savefig(out_path, dpi=int(config["dpi"]), bbox_inches="tight")
     plt.close(fig)
@@ -281,7 +324,18 @@ def main(config: dict = CONFIG) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     x_real_all, y_real_all = load_xy(Path(config["real_npz"]))
-    model_results = []
+    labels_to_plot = [int(label) for label in config["labels_to_plot"]]
+    real_indices = balanced_indices(y_real_all, labels_to_plot, int(config["samples_per_class"]), rng)
+    real_counts = {
+        CLASS_NAMES[int(label)] if int(label) < len(CLASS_NAMES) else str(label): int(np.sum(y_real_all[real_indices] == label))
+        for label in labels_to_plot
+    }
+    logger.info("Using one fixed real reference set for all models: %s", real_counts)
+    
+    tsne_model_results = []
+    umap_model_results = []
+    pca_model_results = []
+    
     point_rows = []
     metric_rows = []
 
@@ -293,31 +347,43 @@ def main(config: dict = CONFIG) -> None:
             continue
 
         x_gen_all, y_gen_all = load_xy(model_npz)
-        labels_to_plot = [int(label) for label in config["labels_to_plot"]]
-        real_indices = balanced_indices(y_real_all, labels_to_plot, int(config["samples_per_class"]), rng)
         gen_indices = balanced_indices(y_gen_all, labels_to_plot, int(config["samples_per_class"]), rng)
         x = np.concatenate([x_real_all[real_indices], x_gen_all[gen_indices]], axis=0)
         labels = np.concatenate([y_real_all[real_indices], y_gen_all[gen_indices]], axis=0)
         source = np.asarray(["real"] * len(real_indices) + ["generated"] * len(gen_indices), dtype=object)
         sample_indices = np.concatenate([real_indices, gen_indices], axis=0)
 
+        # 提取高维特征
         features = standardize_features(make_features(x, config))
-        embedding = run_tsne(features, config)
+        
+        # 分别运行两种降维算法
+        logger.info("Running t-SNE for %s...", model_name)
+        tsne_embedding = run_tsne(features, config)
+        
+        logger.info("Running UMAP for %s...", model_name)
+        umap_embedding = run_umap(features, config)
+
+        logger.info("Running PCA for %s...", model_name)
+        pca_embedding = run_pca(features)
+        
+        # 计算高维量化指标（两者共享，因为真实物理差距看的是高维特征）
         centroid = centroid_distance(features, source, labels)
         mmd = rbf_mmd(features, source)
         knn_real = knn_real_fraction_for_generated(features, source, int(config["knn_k"]))
 
-        model_results.append(
-            {
-                "model_name": model_name,
-                "embedding": embedding,
-                "labels": labels,
-                "source": source,
-                "centroid_distance": centroid,
-                "mmd": mmd,
-                "knn_real_fraction": knn_real,
-            }
-        )
+        # 保存 t-SNE 和 UMAP 的画图结果
+        common_res = {
+            "model_name": model_name,
+            "labels": labels,
+            "source": source,
+            "centroid_distance": centroid,
+            "mmd": mmd,
+            "knn_real_fraction": knn_real,
+        }
+        tsne_model_results.append({**common_res, "embedding": tsne_embedding})
+        umap_model_results.append({**common_res, "embedding": umap_embedding})
+        pca_model_results.append({**common_res, "embedding": pca_embedding})
+
         metric_rows.append(
             {
                 "model": model_name,
@@ -331,7 +397,9 @@ def main(config: dict = CONFIG) -> None:
             }
         )
 
-        for i, (xy, label, src, sample_index) in enumerate(zip(embedding, labels, source, sample_indices)):
+        for i, (tsne_xy, umap_xy, pca_xy, label, src, sample_index) in enumerate(
+            zip(tsne_embedding, umap_embedding, pca_embedding, labels, source, sample_indices)
+        ):
             point_rows.append(
                 {
                     "model": model_name,
@@ -340,8 +408,12 @@ def main(config: dict = CONFIG) -> None:
                     "label": int(label),
                     "sample_index": int(sample_index),
                     "point_index": i,
-                    "tsne_1": float(xy[0]),
-                    "tsne_2": float(xy[1]),
+                    "tsne_1": float(tsne_xy[0]),
+                    "tsne_2": float(tsne_xy[1]),
+                    "umap_1": float(umap_xy[0]),
+                    "umap_2": float(umap_xy[1]),
+                    "pca_1": float(pca_xy[0]),
+                    "pca_2": float(pca_xy[1]),
                 }
             )
 
@@ -354,13 +426,29 @@ def main(config: dict = CONFIG) -> None:
             knn_real,
         )
 
-    if not model_results:
+    if not tsne_model_results:
         raise RuntimeError("No model npz files were found. Please check CONFIG['models'].")
 
-    plot_panels(model_results, out_dir / "tsne_real_vs_generated_models.png", config)
-    write_points_csv(out_dir / "tsne_real_vs_generated_models_points.csv", point_rows)
-    write_points_csv(out_dir / "tsne_real_vs_generated_models_metrics.csv", metric_rows)
-    logger.info("Saved t-SNE outputs to %s", out_dir)
+    # 分别生成两张图
+    plot_panels(tsne_model_results, output_path(out_dir, config, "tsne_real_vs_generated_models.png"), config, title_prefix="t-SNE")
+    plot_panels(umap_model_results, output_path(out_dir, config, "umap_real_vs_generated_models.png"), config, title_prefix="UMAP")
+    plot_panels(pca_model_results, output_path(out_dir, config, "pca_real_vs_generated_models.png"), config, title_prefix="PCA")
+    
+    write_points_csv(output_path(out_dir, config, "dim_reduction_points.csv"), point_rows)
+    write_points_csv(output_path(out_dir, config, "dim_reduction_metrics.csv"), metric_rows)
+    write_points_csv(
+        output_path(out_dir, config, "dim_reduction_fixed_real_reference.csv"),
+        [
+            {
+                "real_npz": Path(config["real_npz"]).as_posix(),
+                "class_name": CLASS_NAMES[int(y_real_all[idx])] if int(y_real_all[idx]) < len(CLASS_NAMES) else str(y_real_all[idx]),
+                "label": int(y_real_all[idx]),
+                "sample_index": int(idx),
+            }
+            for idx in real_indices
+        ],
+    )
+    logger.info("Saved t-SNE and UMAP outputs to %s", out_dir)
 
 
 if __name__ == "__main__":

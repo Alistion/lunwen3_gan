@@ -49,6 +49,10 @@ CONFIG = {
         2,
         3
     ],
+    "disable_temporal_attention": False,
+    "disable_mhta": False,
+    "use_qkv_dwconv": True,
+    "input_kernel_size": 31,
     "lambda_fft": 0.05,
     "grad_clip": 1.0,
     "num_workers": 2,
@@ -102,6 +106,10 @@ def model_kwargs(config: dict) -> dict:
         "dropout": float(config["dropout"]),
         "attention_levels": tuple(int(v) for v in config["attention_levels"]),
         "strict_paper_mode": bool(config.get("strict_paper_mode", False)),
+        "disable_temporal_attention": bool(config.get("disable_temporal_attention", False)),
+        "disable_mhta": bool(config.get("disable_mhta", False)),
+        "use_qkv_dwconv": bool(config.get("use_qkv_dwconv", True)),
+        "input_kernel_size": int(config["input_kernel_size"]) if config.get("input_kernel_size") is not None else None,
     }
 
 

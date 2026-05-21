@@ -38,21 +38,25 @@ class MultiDconvHeadTransposedAttention1D(nn.Module):
     vibration details before the channel-wise attention step.
     """
 
-    def __init__(self, channels: int, num_heads: int = 4, bias: bool = False):
+    def __init__(self, channels: int, num_heads: int = 4, bias: bool = False, use_dwconv: bool = True):
         super().__init__()
         if channels % num_heads != 0:
             raise ValueError(f"channels={channels} must be divisible by num_heads={num_heads}")
         self.num_heads = int(num_heads)
         self.temperature = nn.Parameter(torch.ones(num_heads, 1, 1))
         self.qkv = nn.Conv1d(channels, channels * 3, kernel_size=1, bias=bias)
-        self.qkv_dwconv = nn.Conv1d(
-            channels * 3,
-            channels * 3,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            groups=channels * 3,
-            bias=bias,
+        self.qkv_dwconv = (
+            nn.Conv1d(
+                channels * 3,
+                channels * 3,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                groups=channels * 3,
+                bias=bias,
+            )
+            if use_dwconv
+            else nn.Identity()
         )
         self.project_out = nn.Conv1d(channels, channels, kernel_size=1, bias=bias)
 
@@ -75,10 +79,10 @@ class MultiDconvHeadTransposedAttention1D(nn.Module):
 
 
 class MHTABlock1D(nn.Module):
-    def __init__(self, channels: int, num_heads: int = 4, ):
+    def __init__(self, channels: int, num_heads: int = 4, use_dwconv: bool = True):
         super().__init__()
         self.norm1 = RMSNorm1D(channels)
-        self.attn = MultiDconvHeadTransposedAttention1D(channels, num_heads=num_heads)
+        self.attn = MultiDconvHeadTransposedAttention1D(channels, num_heads=num_heads, use_dwconv=use_dwconv)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + self.attn(self.norm1(x))
@@ -178,6 +182,10 @@ class ConditionalMHTAUNet1D(nn.Module):
         dropout: float = 0.05,
         attention_levels: Iterable[int] = (1, 2, 3),
         strict_paper_mode: bool = False,
+        disable_temporal_attention: bool = False,
+        disable_mhta: bool = False,
+        use_qkv_dwconv: bool = True,
+        input_kernel_size: int | None = None,
     ):
         super().__init__()
         self.signal_length = int(signal_length)
@@ -197,11 +205,12 @@ class ConditionalMHTAUNet1D(nn.Module):
 
         channels = [base_channels * int(mult) for mult in channel_mults]
         self.attention_levels = set(int(level) for level in attention_levels)
-        if strict_paper_mode:
-            self.input_conv = nn.Conv1d(in_channels, channels[0], kernel_size=3, padding=1)
-        else:
-            # 使用大卷积核扩大浅层感受野，帮助模型更早接触到长周期结构
-            self.input_conv = nn.Conv1d(in_channels, channels[0], kernel_size=31, padding=15)
+        if input_kernel_size is None:
+            input_kernel_size = 3 if strict_paper_mode else 31
+        input_kernel_size = int(input_kernel_size)
+        if input_kernel_size < 1 or input_kernel_size % 2 == 0:
+            raise ValueError(f"input_kernel_size must be a positive odd integer, got {input_kernel_size}")
+        self.input_conv = nn.Conv1d(in_channels, channels[0], kernel_size=input_kernel_size, padding=input_kernel_size // 2)
 
         self.down_blocks = nn.ModuleList()
         self.downsamples = nn.ModuleList()
@@ -211,7 +220,9 @@ class ConditionalMHTAUNet1D(nn.Module):
                 nn.ModuleDict(
                     {
                         "res": ConditionalResBlock1D(in_ch, out_ch, time_embed_dim, dropout),
-                        "attn": MHTABlock1D(out_ch, num_heads=num_heads) if level in self.attention_levels else nn.Identity(),
+                        "attn": MHTABlock1D(out_ch, num_heads=num_heads, use_dwconv=use_qkv_dwconv)
+                        if (not disable_mhta and level in self.attention_levels)
+                        else nn.Identity(),
                     }
                 )
             )
@@ -220,8 +231,12 @@ class ConditionalMHTAUNet1D(nn.Module):
                 self.downsamples.append(Downsample1D(out_ch))
 
         self.mid_res = ConditionalResBlock1D(channels[-1], channels[-1], time_embed_dim, dropout)
-        self.mid_attn = MHTABlock1D(channels[-1], num_heads=num_heads)
-        if strict_paper_mode:
+        self.mid_attn = (
+            MHTABlock1D(channels[-1], num_heads=num_heads, use_dwconv=use_qkv_dwconv)
+            if not disable_mhta
+            else nn.Identity()
+        )
+        if strict_paper_mode or disable_temporal_attention:
             self.mid_temporal_attn = nn.Identity()
         else:
             # 在瓶颈层加入时间维全局注意力，用于建模严格周期性的长程依赖
@@ -237,8 +252,8 @@ class ConditionalMHTAUNet1D(nn.Module):
                 nn.ModuleDict(
                     {
                         "res": ConditionalResBlock1D(in_ch + out_ch, out_ch, time_embed_dim, dropout),
-                        "attn": MHTABlock1D(out_ch, num_heads=num_heads)
-                        if original_level in self.attention_levels
+                        "attn": MHTABlock1D(out_ch, num_heads=num_heads, use_dwconv=use_qkv_dwconv)
+                        if (not disable_mhta and original_level in self.attention_levels)
                         else nn.Identity(),
                     }
                 )
