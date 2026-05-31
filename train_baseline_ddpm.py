@@ -30,7 +30,7 @@ CONFIG = {
     "signal_length": 2048,
     "num_classes": 5,
     "base_channels": 128,
-    "channel_mults": [1, 2, 2, 2],
+    "channel_mults": [1, 2, 4, 8],
     "num_res_blocks": 2,
     "attention_levels": [1],
     "time_embed_dim": 512,
